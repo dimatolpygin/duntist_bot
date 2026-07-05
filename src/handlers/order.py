@@ -96,7 +96,8 @@ async def cb_new_order(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OrderFlow.collecting)
     await state.update_data(files=[])
 
-    await callback.message.answer(texts.ORDER_WARNING, reply_markup=keyboards.collecting_kb())
+    # Кнопки «Завершить/Отменить» здесь НЕ показываем — они появятся по мере загрузки файлов.
+    await callback.message.answer(texts.ORDER_WARNING)
     await callback.answer()
     logger.info(
         f"🤖 Бот → @{callback.from_user.username or '—'}: показано предупреждение, старт приёма файлов"
@@ -134,9 +135,15 @@ async def on_file(message: Message, state: FSMContext) -> None:
 
 
 @router.message(StateFilter(OrderFlow.collecting))
-async def on_not_file(message: Message) -> None:
+async def on_not_file(message: Message, state: FSMContext) -> None:
     """В режиме приёма пришло не-файловое сообщение (текст и т.п.)."""
-    await message.answer(texts.NOT_A_FILE, reply_markup=keyboards.collecting_kb())
+    data = await state.get_data()
+    if data.get("files"):
+        # Уже есть файлы — показываем кнопки, чтобы можно было завершить/отменить.
+        await message.answer(texts.NOT_A_FILE, reply_markup=keyboards.collecting_kb())
+    else:
+        # Ни одного файла ещё нет — без кнопок, просто просим прислать файл.
+        await message.answer(texts.NOT_A_FILE_YET)
 
 
 # ─────────────────────────── Завершение приёма ───────────────────────────
@@ -147,8 +154,9 @@ async def cb_finish_order(callback: CallbackQuery, state: FSMContext) -> None:
     files: list[dict[str, Any]] = data.get("files", [])
 
     if not files:
+        # Практически недостижимо: кнопка «Завершить» появляется только после первого файла.
         await callback.answer()
-        await callback.message.answer(texts.NO_FILES_YET, reply_markup=keyboards.collecting_kb())
+        await callback.message.answer(texts.NO_FILES_YET)
         return
 
     await state.set_state(OrderFlow.waiting_client_name)
