@@ -8,10 +8,11 @@
 """
 from __future__ import annotations
 
+import asyncio
 from html import escape
 from typing import Any
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command, StateFilter
@@ -22,6 +23,18 @@ from .. import keyboards, repo, texts
 from ..logger import logger
 
 router = Router()
+
+# Пауза перед итоговым подтверждением о файлах. Позволяет «схлопнуть» пачку файлов
+# (альбом/несколько выбранных сразу) в одно сообщение вместо спама по каждому файлу.
+_CONFIRM_DELAY = 0.8
+
+# Сериализация добавления файлов по пользователю: сообщения альбома aiogram обрабатывает
+# параллельно, и без блокировки конкурентные read-modify-write списка файлов в FSM
+# затирают друг друга (часть файлов терялась). Лок гарантирует, что все файлы сохранятся.
+_file_locks: dict[int, asyncio.Lock] = {}
+# Токен последней «пачки» файлов на пользователя — чтобы подтверждение отправил только
+# самый поздний файл в серии (дебаунс).
+_confirm_tokens: dict[int, int] = {}
 
 
 class OrderFlow(StatesGroup):
@@ -112,26 +125,54 @@ _FILE_FILTER = (
 
 
 @router.message(StateFilter(OrderFlow.collecting), _FILE_FILTER)
-async def on_file(message: Message, state: FSMContext) -> None:
+async def on_file(message: Message, state: FSMContext, bot: Bot) -> None:
     file = _extract_file(message)
     if file is None:  # на всякий случай
-        await message.answer(texts.NOT_A_FILE, reply_markup=keyboards.collecting_kb())
         return
 
-    data = await state.get_data()
-    files: list[dict[str, Any]] = data.get("files", [])
-    files.append(file)
-    await state.update_data(files=files)
+    uid = message.from_user.id
+    lock = _file_locks.setdefault(uid, asyncio.Lock())
+    # Лок сериализует конкурентные добавления файлов из одной пачки — иначе теряются.
+    async with lock:
+        data = await state.get_data()
+        files: list[dict[str, Any]] = data.get("files", [])
+        files.append(file)
+        await state.update_data(files=files)
+        count = len(files)
+        token = _confirm_tokens.get(uid, 0) + 1
+        _confirm_tokens[uid] = token
 
-    await message.answer(
-        texts.FILE_ADDED.format(count=len(files)),
-        reply_markup=keyboards.collecting_kb(),
-    )
     logger.info(
-        f"📎 Заказ (сбор) @{message.from_user.username or '—'} (id:{message.from_user.id}): "
-        f"файл #{len(files)} тип={file['file_type']} имя={file.get('file_name')} "
+        f"📎 Заказ (сбор) @{message.from_user.username or '—'} (id:{uid}): "
+        f"файл #{count} тип={file['file_type']} имя={file.get('file_name')} "
         f"размер={file.get('file_size')}"
     )
+    # Подтверждение отправляем с дебаунсом: только последний файл пачки покажет итог.
+    asyncio.create_task(_confirm_added_later(bot, message.chat.id, state, uid, token))
+
+
+async def _confirm_added_later(
+    bot: Bot, chat_id: int, state: FSMContext, uid: int, token: int
+) -> None:
+    """Через паузу шлёт одно подтверждение с итоговым числом файлов — если за это
+    время не пришёл новый файл (иначе итог покажет более поздняя задача)."""
+    try:
+        await asyncio.sleep(_CONFIRM_DELAY)
+        if _confirm_tokens.get(uid) != token:
+            return  # пришёл ещё файл — подтвердит следующая задача
+        if await state.get_state() != OrderFlow.collecting.state:
+            return  # сценарий уже ушёл дальше (завершён/отменён)
+        data = await state.get_data()
+        count = len(data.get("files", []))
+        if count == 0:
+            return
+        await bot.send_message(
+            chat_id,
+            texts.FILES_ADDED.format(count=count),
+            reply_markup=keyboards.collecting_kb(),
+        )
+    except Exception:
+        logger.exception("Ошибка при отправке подтверждения о принятых файлах")
 
 
 @router.message(StateFilter(OrderFlow.collecting))
