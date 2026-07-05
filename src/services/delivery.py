@@ -17,11 +17,18 @@ from ..logger import logger
 
 
 def _author(order: asyncpg.Record) -> str:
-    """Читаемая подпись отправителя (техника) для карточки."""
-    if order["username"]:
-        return f"@{escape(order['username'])}"
-    name = order["first_name"] or "—"
-    return f"{escape(name)} (id {order['tg_id']})"
+    """Читаемая подпись отправителя (техника) для карточки: ник + имя + user_id."""
+    uid = order["tg_id"]
+    username = f"@{escape(order['username'])}" if order["username"] else None
+    name = escape(order["first_name"]) if order["first_name"] else None
+
+    if username and name:
+        return f"{username} ({name}, id {uid})"
+    if username:
+        return f"{username} (id {uid})"
+    if name:
+        return f"{name} (id {uid})"
+    return f"id {uid}"
 
 
 async def _send_file(bot: Bot, chat_id: int, f: asyncpg.Record) -> None:
