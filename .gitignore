@@ -1,0 +1,19 @@
+# Секреты и приватные материалы (репо публичный!)
+.env
+.env.local
+доступы.txt
+заруб.txt
+.secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
