@@ -1,0 +1,47 @@
+# Локальная разработка: поднимает бот + свои Postgres и Redis одной командой.
+# Не требует ничего, кроме Docker Desktop. В .env достаточно заполнить
+# BOT_TOKEN и GROUP_ID — адреса БД/Redis здесь переопределены.
+#
+# Запуск:   docker compose -f docker-compose.dev.yml up --build
+# Логи:     уже в терминале (Ctrl+C — остановить)
+# Стоп:     docker compose -f docker-compose.dev.yml down
+# Снести БД: docker compose -f docker-compose.dev.yml down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    # Порт на хост не пробрасываем, чтобы не конфликтовать с уже запущенным
+    # локально Postgres. Бот обращается к нему по имени сервиса (postgres:5432).
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Порт на хост не пробрасываем (конфликт с локальным Redis). Доступ боту —
+    # по имени сервиса (redis:6379).
+
+  bot:
+    build: .
+    env_file: .env
+    # environment имеет приоритет над .env — локально бот ходит в свои pg/redis.
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:

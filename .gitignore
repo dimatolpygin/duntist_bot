@@ -3,6 +3,7 @@
 .env.local
 доступы.txt
 заруб.txt
+тз.txt
 .secrets/
 
 # Python

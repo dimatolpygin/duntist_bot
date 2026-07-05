@@ -1,0 +1,3 @@
+# Скрипты для сервера всегда с LF, иначе bash на Ubuntu ломается.
+*.sh text eol=lf
+scripts/*.sh text eol=lf

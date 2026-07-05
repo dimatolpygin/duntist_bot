@@ -1,0 +1,13 @@
+.git
+.gitignore
+.github
+__pycache__
+*.pyc
+.venv
+venv
+.env
+доступы.txt
+заруб.txt
+тз.txt
+docs
+README.md
