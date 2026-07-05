@@ -2,3 +2,4 @@ aiogram==3.15.0
 asyncpg==0.30.0
 redis==5.2.1
 pydantic-settings==2.7.1
+boto3==1.35.99

@@ -11,9 +11,25 @@ from html import escape
 import asyncpg
 from aiogram import Bot
 
+from . import s3
 from .. import repo, texts
 from ..config import settings
 from ..logger import logger
+
+# Bot API отдаёт файлы для скачивания ботом только до ~20 МБ (getFile).
+# Больше — скачать для заливки в S3 нельзя (нужен локальный Bot API сервер, вне базовой версии).
+_BOT_DOWNLOAD_LIMIT = 20 * 1024 * 1024
+
+
+def _human_size(size: int | None) -> str:
+    if not size:
+        return "неизвестно"
+    val = float(size)
+    for unit in ("Б", "КБ", "МБ", "ГБ"):
+        if val < 1024 or unit == "ГБ":
+            return f"{val:.0f} {unit}" if unit == "Б" else f"{val:.1f} {unit}"
+        val /= 1024
+    return f"{size} Б"
 
 
 def _author(order: asyncpg.Record) -> str:
@@ -79,17 +95,62 @@ async def send_order_to_group(bot: Bot, pool: asyncpg.Pool, order_id: int) -> bo
 
     sent = 0
     for f in files:
-        try:
-            await _send_file(bot, chat_id, f)
+        if await _deliver_file(bot, chat_id, order_id, f):
             sent += 1
-        except Exception:
-            logger.exception(
-                f"❌ Файл заказа №{order_id} не отправлен в группу "
-                f"(тип={f['file_type']}, имя={f['file_name']})"
-            )
 
     logger.info(
         f"📨 Заказ №{order_id} отправлен в группу «Город» ({chat_id}): "
         f"карточка + {sent}/{len(files)} файлов"
     )
     return sent == len(files)
+
+
+async def _deliver_file(bot: Bot, chat_id: int, order_id: int, f: asyncpg.Record) -> bool:
+    """Отправляет файл в группу. Сначала прямая пересылка по file_id (обходит лимит
+    50 МБ). Если не прошла — пробует S3-fallback, иначе кладёт заметку для оператора."""
+    try:
+        await _send_file(bot, chat_id, f)
+        return True
+    except Exception:
+        logger.exception(
+            f"⚠️ Прямая отправка файла заказа №{order_id} не прошла, пробую fallback "
+            f"(тип={f['file_type']}, имя={f['file_name']}, размер={f['file_size']})"
+        )
+        return await _fallback_file(bot, chat_id, order_id, f)
+
+
+async def _fallback_file(bot: Bot, chat_id: int, order_id: int, f: asyncpg.Record) -> bool:
+    """Fallback для файла, который не удалось переслать напрямую.
+
+    Работает только для файлов ≤20 МБ (ограничение getFile у Bot API): скачивает файл,
+    заливает в S3 и шлёт ссылку. Иначе — заметка оператору связаться с отправителем.
+    """
+    name = f["file_name"] or f["file_type"]
+    size = f["file_size"] or 0
+
+    can_download = s3.is_configured() and (0 < size <= _BOT_DOWNLOAD_LIMIT)
+    if can_download:
+        try:
+            tg_file = await bot.get_file(f["file_id"])
+            buf = await bot.download_file(tg_file.file_path)
+            data = buf.read()
+            key = f"orders/{order_id}/{f['file_unique_id'] or f['file_id']}_{name}"
+            url = await s3.upload_bytes(key, data, f["mime_type"])
+            await bot.send_message(
+                chat_id,
+                texts.GROUP_FILE_S3_LINK.format(
+                    id=order_id, name=escape(name), size=_human_size(size), url=url
+                ),
+            )
+            return True
+        except Exception:
+            logger.exception(f"❌ S3-fallback файла заказа №{order_id} не удался")
+
+    # Ни переслать, ни залить не вышло — оставляем заметку оператору.
+    await bot.send_message(
+        chat_id,
+        texts.GROUP_FILE_FAILED.format(
+            id=order_id, name=escape(name), size=_human_size(size)
+        ),
+    )
+    return False
