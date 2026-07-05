@@ -21,6 +21,7 @@ import asyncpg
 
 from .. import keyboards, repo, texts
 from ..logger import logger
+from ..services.delivery import send_order_to_group
 
 router = Router()
 
@@ -251,7 +252,9 @@ async def on_client_name_not_text(message: Message) -> None:
 # ─────────────────────────── Количество/описание ───────────────────────────
 
 @router.message(StateFilter(OrderFlow.waiting_quantity), F.text)
-async def on_quantity(message: Message, state: FSMContext, pool: asyncpg.Pool) -> None:
+async def on_quantity(
+    message: Message, state: FSMContext, pool: asyncpg.Pool, bot: Bot
+) -> None:
     quantity = message.text.strip()
     data = await state.get_data()
     files: list[dict[str, Any]] = data.get("files", [])
@@ -281,6 +284,10 @@ async def on_quantity(message: Message, state: FSMContext, pool: asyncpg.Pool) -
         f"✅ Заказ №{order_id} создан @{message.from_user.username or '—'} (id:{message.from_user.id}): "
         f"клиент «{client_name}», кол-во «{quantity}», файлов {len(files)}"
     )
+
+    # Отправляем карточку и файлы в закрытую группу «Город».
+    # Ошибки доставки не ломают клиентский поток — заказ уже принят и сохранён.
+    await send_order_to_group(bot, pool, order_id)
 
 
 @router.message(StateFilter(OrderFlow.waiting_quantity))
