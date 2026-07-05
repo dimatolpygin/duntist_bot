@@ -154,23 +154,41 @@ async def on_file(message: Message, state: FSMContext, bot: Bot) -> None:
 async def _confirm_added_later(
     bot: Bot, chat_id: int, state: FSMContext, uid: int, token: int
 ) -> None:
-    """Через паузу шлёт одно подтверждение с итоговым числом файлов — если за это
-    время не пришёл новый файл (иначе итог покажет более поздняя задача)."""
+    """Через паузу обновляет единственное сообщение-счётчик с итоговым числом файлов.
+
+    Держим ровно одно подтверждение: при новой пачке удаляем предыдущее сообщение
+    и шлём новое с актуальным числом — кнопка «Завершить» всегда одна и снизу.
+    Срабатывает только последняя задача серии (дебаунс по token)."""
     try:
         await asyncio.sleep(_CONFIRM_DELAY)
         if _confirm_tokens.get(uid) != token:
             return  # пришёл ещё файл — подтвердит следующая задача
-        if await state.get_state() != OrderFlow.collecting.state:
-            return  # сценарий уже ушёл дальше (завершён/отменён)
-        data = await state.get_data()
-        count = len(data.get("files", []))
-        if count == 0:
-            return
-        await bot.send_message(
-            chat_id,
-            texts.FILES_ADDED.format(count=count),
-            reply_markup=keyboards.collecting_kb(),
-        )
+
+        lock = _file_locks.setdefault(uid, asyncio.Lock())
+        async with lock:
+            if _confirm_tokens.get(uid) != token:
+                return
+            if await state.get_state() != OrderFlow.collecting.state:
+                return  # сценарий уже ушёл дальше (завершён/отменён)
+            data = await state.get_data()
+            count = len(data.get("files", []))
+            if count == 0:
+                return
+
+            # Удаляем предыдущее сообщение-счётчик, чтобы не плодить кнопки.
+            prev_id = data.get("confirm_msg_id")
+            if prev_id:
+                try:
+                    await bot.delete_message(chat_id, prev_id)
+                except Exception:
+                    pass
+
+            msg = await bot.send_message(
+                chat_id,
+                texts.FILES_ADDED.format(count=count),
+                reply_markup=keyboards.collecting_kb(),
+            )
+            await state.update_data(confirm_msg_id=msg.message_id)
     except Exception:
         logger.exception("Ошибка при отправке подтверждения о принятых файлах")
 
@@ -178,12 +196,11 @@ async def _confirm_added_later(
 @router.message(StateFilter(OrderFlow.collecting))
 async def on_not_file(message: Message, state: FSMContext) -> None:
     """В режиме приёма пришло не-файловое сообщение (текст и т.п.)."""
+    # Без кнопок: единственная кнопка «Завершить» живёт на сообщении-счётчике файлов.
     data = await state.get_data()
     if data.get("files"):
-        # Уже есть файлы — показываем кнопки, чтобы можно было завершить/отменить.
-        await message.answer(texts.NOT_A_FILE, reply_markup=keyboards.collecting_kb())
+        await message.answer(texts.NOT_A_FILE)
     else:
-        # Ни одного файла ещё нет — без кнопок, просто просим прислать файл.
         await message.answer(texts.NOT_A_FILE_YET)
 
 
