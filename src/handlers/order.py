@@ -104,11 +104,14 @@ def _extract_file(message: Message) -> dict[str, Any] | None:
 # ─────────────────────────── Старт сценария ───────────────────────────
 
 @router.callback_query(F.data == keyboards.NEW_ORDER_CALLBACK)
-async def cb_new_order(callback: CallbackQuery, state: FSMContext) -> None:
-    """«Новый заказ»: показать предупреждение и начать приём файлов."""
+async def cb_new_order(callback: CallbackQuery, state: FSMContext, pool: asyncpg.Pool) -> None:
+    """«Новый заказ»: показать видео-инструкцию (если задана), предупреждение и начать приём файлов."""
     await state.clear()
     await state.set_state(OrderFlow.collecting)
     await state.update_data(files=[])
+
+    # Видео-инструкция «как загружать файлы» — до предупреждения (если админ её задал).
+    await _show_instruction_video(callback, pool)
 
     # Кнопки «Завершить/Отменить» здесь НЕ показываем — они появятся по мере загрузки файлов.
     await callback.message.answer(texts.ORDER_WARNING)
@@ -116,6 +119,21 @@ async def cb_new_order(callback: CallbackQuery, state: FSMContext) -> None:
     logger.info(
         f"🤖 Бот → @{callback.from_user.username or '—'}: показано предупреждение, старт приёма файлов"
     )
+
+
+async def _show_instruction_video(callback: CallbackQuery, pool: asyncpg.Pool) -> None:
+    """Показывает видео-инструкцию, если она задана. Ошибки не ломают сценарий заказа."""
+    video = await repo.get_instruction_video(pool)
+    if video is None:
+        return
+    caption = video["caption"] or texts.INSTRUCTION_CAPTION_FALLBACK
+    try:
+        if video["is_video"]:
+            await callback.message.answer_video(video["file_id"], caption=caption)
+        else:
+            await callback.message.answer_document(video["file_id"], caption=caption)
+    except Exception:
+        logger.exception("Не удалось показать видео-инструкцию технику")
 
 
 # ─────────────────────────── Приём файлов ───────────────────────────

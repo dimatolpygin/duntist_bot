@@ -58,3 +58,33 @@ async def get_order_files(pool: asyncpg.Pool, order_id: int) -> list[asyncpg.Rec
     return await pool.fetch(
         "SELECT * FROM order_files WHERE order_id = $1 ORDER BY id", order_id
     )
+
+
+# ─────────────────────────── Видео-инструкция ───────────────────────────
+
+async def get_instruction_video(pool: asyncpg.Pool) -> asyncpg.Record | None:
+    return await pool.fetchrow("SELECT * FROM instruction_video WHERE id = 1")
+
+
+async def set_instruction_video(
+    pool: asyncpg.Pool,
+    *,
+    file_id: str,
+    is_video: bool,
+    caption: str | None,
+    updated_by: int,
+) -> None:
+    """Задаёт/заменяет видео-инструкцию (singleton, id = 1)."""
+    await pool.execute(
+        """
+        INSERT INTO instruction_video (id, file_id, is_video, caption, updated_at, updated_by)
+        VALUES (1, $1, $2, $3, now(), $4)
+        ON CONFLICT (id) DO UPDATE
+            SET file_id = EXCLUDED.file_id,
+                is_video = EXCLUDED.is_video,
+                caption = EXCLUDED.caption,
+                updated_at = now(),
+                updated_by = EXCLUDED.updated_by
+        """,
+        file_id, is_video, caption, updated_by,
+    )
