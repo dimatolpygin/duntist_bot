@@ -212,6 +212,17 @@ async def _confirm_added_later(
         logger.exception("Ошибка при отправке подтверждения о принятых файлах")
 
 
+# Файл прислан вне сценария заказа (нажал /start и сразу отправил файлы, не нажав
+# «Новый заказ»). StateFilter(None) — срабатывает только когда активного FSM нет.
+@router.message(StateFilter(None), _FILE_FILTER)
+async def on_file_without_order(message: Message) -> None:
+    await message.answer(texts.NEED_NEW_ORDER, reply_markup=keyboards.main_kb())
+    logger.info(
+        f"🤖 Бот → @{message.from_user.username or '—'}: файл вне заказа — "
+        f"подсказка нажать «Новый заказ»"
+    )
+
+
 @router.message(StateFilter(OrderFlow.collecting))
 async def on_not_file(message: Message, state: FSMContext) -> None:
     """В режиме приёма пришло не-файловое сообщение (текст и т.п.)."""
