@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import BotCommand
 
 from . import __version__
 from .cache import close_redis, init_redis
@@ -46,6 +47,10 @@ async def main() -> None:
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        # Команды в меню слева (кнопка «Меню» рядом с полем ввода).
+        await bot.set_my_commands([
+            BotCommand(command="start", description="начать"),
+        ])
         me = await bot.get_me()
         log.info(f"✅ Бот @{me.username} запущен (режим: polling)")
         log.info(f"📨 Группа «Город» для карточек заказов: {settings.group_id}")
