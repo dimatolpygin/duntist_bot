@@ -17,6 +17,7 @@ from .handlers import get_main_router
 from .logger import setup_logging
 from .middlewares import LoggingMiddleware
 from .migrator import apply_migrations
+from .services import autosend
 
 
 async def main() -> None:
@@ -45,6 +46,9 @@ async def main() -> None:
     dp.update.middleware(LoggingMiddleware())
     dp.include_router(get_main_router())
 
+    # Фоновый воркер авто-досылки незавершённых заказов (простой клиента > таймаута).
+    autosend_task = asyncio.create_task(autosend.run_worker(bot, storage, pool))
+
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         # Команды в меню слева (кнопка «Меню» рядом с полем ввода).
@@ -57,6 +61,7 @@ async def main() -> None:
         await dp.start_polling(bot)
     finally:
         log.info("Останавливаю бота...")
+        autosend_task.cancel()
         await close_redis()
         await close_pool()
         await bot.session.close()

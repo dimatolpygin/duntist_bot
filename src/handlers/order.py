@@ -21,6 +21,7 @@ import asyncpg
 
 from .. import keyboards, repo, texts
 from ..logger import logger
+from ..services import autosend
 from ..services.delivery import send_order_to_group
 
 router = Router()
@@ -156,10 +157,19 @@ async def on_file(message: Message, state: FSMContext, bot: Bot) -> None:
         data = await state.get_data()
         files: list[dict[str, Any]] = data.get("files", [])
         files.append(file)
-        await state.update_data(files=files)
+        # Данные отправителя нужны воркеру авто-досылки, если клиент уйдёт не завершив.
+        await state.update_data(
+            files=files,
+            sender_tg_id=uid,
+            sender_username=message.from_user.username,
+            sender_first_name=message.from_user.first_name,
+        )
         count = len(files)
         token = _confirm_tokens.get(uid, 0) + 1
         _confirm_tokens[uid] = token
+
+    # Продлеваем дедлайн авто-досылки: файлы уйдут сами, если клиент бросит заказ.
+    await autosend.touch(message.chat.id, uid)
 
     logger.info(
         f"📎 Заказ (сбор) @{message.from_user.username or '—'} (id:{uid}): "
@@ -248,6 +258,8 @@ async def cb_finish_order(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     await state.set_state(OrderFlow.waiting_client_name)
+    # Клиент ещё в процессе — продлеваем дедлайн авто-досылки.
+    await autosend.touch(callback.message.chat.id, callback.from_user.id)
     # Убираем кнопки у предыдущего сообщения, чтобы не завершали повторно.
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -267,6 +279,8 @@ async def on_client_name(message: Message, state: FSMContext) -> None:
     client_name = message.text.strip()
     await state.update_data(client_name=client_name)
     await state.set_state(OrderFlow.waiting_quantity)
+    # Клиент активен — продлеваем дедлайн авто-досылки.
+    await autosend.touch(message.chat.id, message.from_user.id)
     await message.answer(texts.ASK_QUANTITY.format(client=escape(client_name)))
     logger.info(
         f"🤖 Бот → @{message.from_user.username or '—'}: имя клиента «{client_name}», запрошено количество"
@@ -299,6 +313,8 @@ async def on_quantity(
         files=files,
     )
     await state.clear()
+    # Заказ оформлен штатно — снимаем его с авто-досылки.
+    await autosend.clear(message.chat.id, message.from_user.id)
 
     await message.answer(
         texts.ORDER_ACCEPTED.format(
@@ -329,6 +345,7 @@ async def on_quantity_not_text(message: Message) -> None:
 @router.callback_query(F.data == keyboards.CANCEL_ORDER_CALLBACK)
 async def cb_cancel_order(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    await autosend.clear(callback.message.chat.id, callback.from_user.id)
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
@@ -343,5 +360,6 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
         return
     await state.clear()
+    await autosend.clear(message.chat.id, message.from_user.id)
     await message.answer(texts.ORDER_CANCELLED)
     logger.info(f"🤖 Бот → @{message.from_user.username or '—'}: заказ отменён (/cancel)")

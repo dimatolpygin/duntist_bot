@@ -12,24 +12,27 @@ async def create_order(
     tg_id: int,
     username: str | None,
     first_name: str | None,
-    client_name: str,
-    quantity: str,
+    client_name: str | None,
+    quantity: str | None,
     files: list[dict[str, Any]],
+    is_auto: bool = False,
 ) -> int:
     """Создаёт завершённый заказ и привязанные к нему файлы одной транзакцией.
 
-    Возвращает номер заказа (orders.id).
+    is_auto=True — заказ авто-собран воркером (клиент не завершил): client_name и
+    quantity могут быть None. Возвращает номер заказа (orders.id).
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
             order_id: int = await conn.fetchval(
                 """
                 INSERT INTO orders
-                    (tg_id, username, first_name, client_name, quantity, status, completed_at)
-                VALUES ($1, $2, $3, $4, $5, 'completed', now())
+                    (tg_id, username, first_name, client_name, quantity,
+                     status, is_auto, completed_at)
+                VALUES ($1, $2, $3, $4, $5, 'completed', $6, now())
                 RETURNING id
                 """,
-                tg_id, username, first_name, client_name, quantity,
+                tg_id, username, first_name, client_name, quantity, is_auto,
             )
             for f in files:
                 await conn.execute(

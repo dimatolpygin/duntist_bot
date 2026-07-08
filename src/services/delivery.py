@@ -88,6 +88,8 @@ async def send_order_to_group(bot: Bot, pool: asyncpg.Pool, order_id: int) -> bo
             count=len(files),
             author=_author(order),
         )
+        if order["is_auto"]:
+            card = texts.GROUP_ORDER_CARD_AUTO_NOTE + card
         await bot.send_message(chat_id, card)
     except Exception:
         logger.exception(f"❌ Не удалось отправить карточку заказа №{order_id} в группу {chat_id}")
