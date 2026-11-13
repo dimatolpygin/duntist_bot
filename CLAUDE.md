@@ -30,3 +30,39 @@ Redis (FSM), Docker, polling, автомиграции, полный слой л
 
 CI/CD через GitHub Actions, публичный репо `dimatolpygin/duntist_bot`, сервер `root@45.88.14.4`.
 Доступы (бот-токен, GROUP_ID, S3 Beget, SSH) — в `доступы.txt` (не коммитить в публичный репо).
+
+## Где мы
+
+Базовая версия (этапы 0–6) закрыта. Этап 7 технически подготовлен и ждёт приёмки, без запуска Telegram;
+этап 8 — подключение токена/группы и живая приёмка. Закрытие 7 — только после подтверждения человека.
+Разработка в `dev`; не мержить/пушить `master` без явного указания.
+
+## Два экземпляра
+
+- Первый: `/opt/zarub_bot`, контейнер `zarub_bot-bot-1`, схема `zarub`, Redis `/0`.
+- Второй: `/opt/zarub_bot_second`, Compose `docker-compose.second.yml`, сервис `bot_second`,
+  схема `zarub_second`, Redis `/1`, S3-префикс `orders-second`.
+- Общая сеть `zarub_bot_default`, существующие Postgres 16 / Redis 7. Новые БД-контейнеры не нужны.
+- Таблицы каждой схемы: `orders`, `order_files`, `instruction_video`, `schema_migrations`.
+  Миграция 0003 добавляет `is_auto`. Авто-досылка — 10 минут, проверка раз в минуту.
+- `BOT_VARIANT` в `src/config.py`: `primary` по умолчанию, `second` для второго бота.
+  `src/texts.py:order_warning` выбирает предупреждение; второй — выдача на следующий день до 12:00.
+  Проверка формата STL не добавлялась: это изменение текста предупреждения.
+- `.env.second` — только на сервере, права 600. BOT_TOKEN/GROUP_ID пока пустые;
+  БД/S3/ADMIN_IDS наследуются от первого. Без доступов `src.main` отклоняет запуск до подключения к БД.
+- `src/prepare_second.py` применяет миграции только `zarub_second`, проверяет Redis /1 без Telegram.
+  `scripts/check_second_isolation.py` проверяет FSM/таймеры через временные ключи, затем удаляет их.
+
+Команды из второго каталога:
+`docker compose -f docker-compose.second.yml run --rm --no-deps bot_second python -m src.prepare_second`;
+проверка изоляции — та же команда с `python -m scripts.check_second_isolation`.
+Запуск после подключения доступов: `docker compose -f docker-compose.second.yml --profile second up -d --no-build`.
+Подробности и ограничения — `docs/SECOND_BOT.md`.
+
+Грабли: `pending_orders` и FSM требуют разных Redis-баз; замены токена/группы недостаточно.
+Compose читает `.env.second` в `format: raw`, значения без кавычек. Не запускать основной
+`docker-compose.yml` из второго каталога. `Dockerfile.second` использует зависимости первого
+образа; при смене requirements нужен новый базовый образ. Контекст сборки исключает `.env*` и `.secrets`.
+Второй экземпляр подготовлен из `dev`, автоматическое обновление не подключено (этап 8).
+SSH — порт 39066, ключ `.secrets/deploy_key`; на Windows OpenSSH может отвергать ACL ключа,
+Paramiko читает его без изменения разрешений. Секреты в логи/чат не выводить.
