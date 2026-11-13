@@ -1,0 +1,30 @@
+# Отдельный Compose-проект: существующие Postgres/Redis не пересоздаются.
+name: zarub_bot_second
+
+services:
+  bot_second:
+    image: zarub-bot-second:prepared
+    build:
+      context: .
+      dockerfile: Dockerfile.second
+    profiles: [second]
+    restart: unless-stopped
+    env_file:
+      - path: .env.second
+        format: raw
+    environment:
+      BOT_VARIANT: second
+      DB_SCHEMA: zarub_second
+      REDIS_URL: redis://redis:6379/1
+      S3_KEY_PREFIX: orders-second
+    networks: [shared]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  shared:
+    external: true
+    name: zarub_bot_default

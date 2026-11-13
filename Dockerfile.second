@@ -1,0 +1,8 @@
+# Повторно используем зависимости работающего первого бота, без скачивания образов.
+# requirements.txt должен совпадать с исходным образом. При изменении зависимостей
+# нужен новый базовый образ, собранный основным Dockerfile.
+FROM zarub_bot-bot:latest
+COPY src /app/src
+COPY migrations /app/migrations
+COPY scripts/check_second_isolation.py /app/scripts/check_second_isolation.py
+CMD ["python", "-m", "src.main"]

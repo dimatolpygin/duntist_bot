@@ -6,6 +6,9 @@ __pycache__
 .venv
 venv
 .env
+.env.*
+.secrets
+.claude
 доступы.txt
 заруб.txt
 тз.txt

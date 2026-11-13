@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     group_id: str
     # ID администраторов через запятую (необязательно; для сервисных команд).
     admin_ids: str = ""
+    # Различия экземпляров ограничены конфигурацией и текстами.
+    bot_variant: Literal["primary", "second"] = "primary"
 
     # БД
     database_url: str
@@ -34,6 +37,7 @@ class Settings(BaseSettings):
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_public_base_url: str = ""
+    s3_key_prefix: str = "orders"
 
     # Прочее
     log_level: str = "INFO"

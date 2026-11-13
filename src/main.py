@@ -24,6 +24,12 @@ async def main() -> None:
     log = setup_logging(settings.log_level)
     log.info(f"⏳ Запуск бота приёма заказов (v{__version__})...")
 
+    # Без доступов не подключаемся к инфраструктуре и не запускаем polling.
+    if not settings.bot_token.strip() or not settings.group_id.strip():
+        raise ValueError("Перед запуском заполните BOT_TOKEN и GROUP_ID")
+    if settings.group_chat_id >= 0:
+        raise ValueError("GROUP_ID должен быть отрицательным ID группы Telegram")
+
     # Инфраструктура.
     pool = await init_pool()
     await apply_migrations(pool)

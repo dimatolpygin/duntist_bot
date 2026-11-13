@@ -20,6 +20,7 @@ from aiogram.types import CallbackQuery, Message
 import asyncpg
 
 from .. import keyboards, repo, texts
+from ..config import settings
 from ..logger import logger
 from ..services import autosend
 from ..services.delivery import send_order_to_group
@@ -115,7 +116,7 @@ async def cb_new_order(callback: CallbackQuery, state: FSMContext, pool: asyncpg
     await _show_instruction_video(callback, pool)
 
     # Кнопки «Завершить/Отменить» здесь НЕ показываем — они появятся по мере загрузки файлов.
-    await callback.message.answer(texts.ORDER_WARNING)
+    await callback.message.answer(texts.order_warning(settings.bot_variant))
     await callback.answer()
     logger.info(
         f"🤖 Бот → @{callback.from_user.username or '—'}: показано предупреждение, старт приёма файлов"

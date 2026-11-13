@@ -136,7 +136,8 @@ async def _fallback_file(bot: Bot, chat_id: int, order_id: int, f: asyncpg.Recor
             tg_file = await bot.get_file(f["file_id"])
             buf = await bot.download_file(tg_file.file_path)
             data = buf.read()
-            key = f"orders/{order_id}/{f['file_unique_id'] or f['file_id']}_{name}"
+            prefix = settings.s3_key_prefix.strip("/")
+            key = f"{prefix}/{order_id}/{f['file_unique_id'] or f['file_id']}_{name}"
             url = await s3.upload_bytes(key, data, f["mime_type"])
             await bot.send_message(
                 chat_id,
