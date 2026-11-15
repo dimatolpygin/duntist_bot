@@ -14,6 +14,12 @@ START = (
     "Отправьте все файлы, после чего нажмите <b>«✅ Завершить заказ»</b>."
 )
 
+SECOND_START = START.replace("на ЛСП", "на Циркон")
+
+
+def start_message(variant: str) -> str:
+    return SECOND_START if variant == "second" else START
+
 # ─────────────────────── Сценарий заказа ───────────────────────
 
 # Предупреждение показывается ДО приёма файлов (по требованию заказчика).
@@ -78,6 +84,17 @@ ASK_QUANTITY = (
     "Введите <b>количество и описание</b> заказа.\n"
     "Например: <i>ц/л 4шт, 4 МК, 4 переделка</i>."
 )
+
+SECOND_ASK_QUANTITY = (
+    "Имя клиента: <b>{client}</b>\n\n"
+    "Введите <b>кол-во, цвет и описание</b> заказа.\n"
+    "Например: <i>1ед ДЦ А2, 4ДЦ переделка А1</i>"
+)
+
+
+def ask_quantity(variant: str) -> str:
+    return SECOND_ASK_QUANTITY if variant == "second" else ASK_QUANTITY
+
 
 QUANTITY_NOT_TEXT = "Введите <b>количество / описание</b> обычным текстом."
 

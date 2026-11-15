@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from .. import keyboards, texts
+from ..config import settings
 from ..logger import logger
 
 router = Router()
@@ -20,7 +21,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     u = message.from_user
     await message.answer(
-        texts.START.format(name=escape(u.first_name or "друг")),
+        texts.start_message(settings.bot_variant).format(name=escape(u.first_name or "друг")),
         reply_markup=keyboards.main_kb(),
     )
     logger.info(f"🤖 Бот → @{u.username or '—'}: приветствие + кнопка «Новый заказ»")

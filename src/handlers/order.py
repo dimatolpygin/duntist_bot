@@ -282,7 +282,7 @@ async def on_client_name(message: Message, state: FSMContext) -> None:
     await state.set_state(OrderFlow.waiting_quantity)
     # Клиент активен — продлеваем дедлайн авто-досылки.
     await autosend.touch(message.chat.id, message.from_user.id)
-    await message.answer(texts.ASK_QUANTITY.format(client=escape(client_name)))
+    await message.answer(texts.ask_quantity(settings.bot_variant).format(client=escape(client_name)))
     logger.info(
         f"🤖 Бот → @{message.from_user.username or '—'}: имя клиента «{client_name}», запрошено количество"
     )
